@@ -29,10 +29,10 @@ contract SafeGameCashv2 is ERC20, Ownable {
     SGCDividendTrackerv2 public dividendTracker;
 
     address public liquidityWallet;
-    address public marketingWallet = 0xdE3D56dB69Ebf8A8F190f4Ff9e41E12589b77758;
+    address public marketingWallet = 0x8171894d6316F73d2F69b3cA60b8633064962Ab4; // TODO change
 
-    uint256 public maxSellTransactionAmount = 2 * 10 ** 12 * (10**9); // 0.1% of supply
-    uint256 public swapTokensAtAmount = 1 * 10 ** 12 * (10**9); // 0.05% of supply
+    uint256 public maxSellTransactionAmount = 2 * 10 ** 6 * (10**9); // 0.1% of supply TODO pouvoir changer
+    uint256 public swapTokensAtAmount = 2 * 10 ** 5 * (10**9); // 0.01% of supply TODO pouvoir hanger
 
     uint256 public BNBRewardsSellFee = 7;
     uint256 public liquiditySellFee = 4;
@@ -45,14 +45,14 @@ contract SafeGameCashv2 is ERC20, Ownable {
     uint256 public totalBuyFees;
 
     uint256 public marketingTransferFee = 10;
-    uint256 private _marketingCurrentAccumulatedFee;
-    uint256 private _liquidityCurrentAccumulatedFee;
+    uint256 public _marketingCurrentAccumulatedFee; // TODO change visibility
+    uint256 public _liquidityCurrentAccumulatedFee; // TODO change visibility
 
     // use by default 300,000 gas to process auto-claiming dividends
     uint256 public gasForProcessing = 300000;
 
     // timestamp for when the token can be traded freely on PanackeSwap
-    uint256 public tradingEnabledTimestamp = 1652869588; 
+    uint256 public tradingEnabledTimestamp = 1612869588; 
 
     // exclude from fees and max transaction amount
     mapping (address => bool) private _isExcludedFromFees;
@@ -104,7 +104,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
     	address indexed processor
     );
 
-    constructor() ERC20("SafeGame Cash v2", "SGC") {
+    constructor() ERC20("SafeGame Cash v2", "SGC2") {
 
         totalBuyFees = BNBRewardsBuyFee + liquidityBuyFee + marketingBuyFee;
         totalSellFees = BNBRewardsSellFee + liquiditySellFee + marketingSellFee;
@@ -139,11 +139,10 @@ contract SafeGameCashv2 is ERC20, Ownable {
             _mint is an internal function in ERC20.sol that is only called here,
             and CANNOT be called ever again
         */
-        _mint(owner(), 2 * 10 ** 15 * (10**9));
+        _mint(owner(), 2 * 10 ** 9 * (10**9));
     }
 
     receive() external payable {
-
   	}
 
     function updateDividendTracker(address newAddress) public onlyOwner {
@@ -312,7 +311,6 @@ contract SafeGameCashv2 is ERC20, Ownable {
         require(amount > 0, "ERC20: Transfer amount must be greater than zero");
         require(!_isBlacklisted[to], "SGC: Recipient is backlisted");
         require(!_isBlacklisted[from], "SGC: Sender is backlisted");
-        require(!_isSwapping, "SGC: The contract is swapping accumulated SGC to BNB. Try again in a few seconds");
 
         bool tradingIsEnabled = getTradingIsEnabled();
 
@@ -348,7 +346,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
             swapAndLiquify(_liquidityCurrentAccumulatedFee);
             _liquidityCurrentAccumulatedFee = 0;
 
-            swapAndSendToMarketingWallet(_marketingCurrentAccumulatedFee);
+            // swapAndSendToMarketingWallet(_marketingCurrentAccumulatedFee);
             _marketingCurrentAccumulatedFee = 0;
 
             swapAndSendDividends(balanceOf(address(this)));
@@ -356,7 +354,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
             _isSwapping = false;
         }
 
-        bool takeFee = tradingIsEnabled;
+        bool takeFee = tradingIsEnabled && !_isSwapping;
 
         // if any account belongs to _isExcludedFromFee account then remove the fee
         if(_isExcludedFromFees[from] || _isExcludedFromFees[to]) {
@@ -367,14 +365,14 @@ contract SafeGameCashv2 is ERC20, Ownable {
             uint256 totalFees;
             if(isSellTransfer){
                 totalFees = totalSellFees;
-                _liquidityCurrentAccumulatedFee+= amount.mul(liquidityBuyFee).div(100);
-                _marketingCurrentAccumulatedFee+= amount.mul(marketingBuyFee).div(100);
+                _liquidityCurrentAccumulatedFee+= amount.mul(liquiditySellFee).div(100);
+                _marketingCurrentAccumulatedFee+= amount.mul(marketingSellFee).div(100);
             }
             // Buy
             else if(automatedMarketMakerPairs[from]) {
                 totalFees = totalBuyFees;
-                _liquidityCurrentAccumulatedFee+= amount.mul(liquiditySellFee).div(100);
-                _marketingCurrentAccumulatedFee+= amount.mul(marketingSellFee).div(100);
+                _liquidityCurrentAccumulatedFee+= amount.mul(liquidityBuyFee).div(100);
+                _marketingCurrentAccumulatedFee+= amount.mul(marketingBuyFee).div(100);
             }
             else {
                 totalFees = marketingTransferFee;
@@ -466,7 +464,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
     function swapAndSendDividends(uint256 tokens) private {
         swapTokensForEth(tokens);
         uint256 dividends = address(this).balance;
-        (bool success,) = address(dividendTracker).call{value: dividends}("");
+        (bool success,) = payable(address(dividendTracker)).call{value: dividends}("");
 
         if(success) {
    	 		emit SendDividends(tokens, dividends);
@@ -552,7 +550,7 @@ contract SGCDividendTrackerv2 is DividendPayingToken, Ownable {
 
     constructor() DividendPayingToken("SGC_Dividend_Tracker_v2", "SGC_Dividend_Tracker_v2") {
     	claimWait = 3600;
-        minimumTokenBalanceForDividends = 2 * 10**10 * (10**9); //must hold 20 000 000 000+ tokens
+        minimumTokenBalanceForDividends = 2 * 10**4 * (10**9); //must hold 20 000 + tokens
     }
 
     function _transfer(address, address, uint256) pure internal override {
