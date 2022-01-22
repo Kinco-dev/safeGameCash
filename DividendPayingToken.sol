@@ -49,10 +49,11 @@ contract DividendPayingToken is ERC20, DividendPayingTokenInterface, DividendPay
 
   /// @dev Distributes dividends whenever ether is paid to this contract.
   receive() external payable {
-    distributeDividends();
+    shareDividends();
   }
 
-  /// @notice Distributes ether to token holders as dividends.
+  /// @notice Dividends will actually be distributed if the user claims or waits for other users 
+  /// to make transactions and triggers its redistribution
   /// @dev It reverts if the total supply of tokens is 0.
   /// It emits the `DividendsDistributed` event if the amount of received ether is greater than 0.
   /// About undistributed ether:
@@ -65,7 +66,8 @@ contract DividendPayingToken is ERC20, DividendPayingTokenInterface, DividendPay
   ///     and try to distribute it in the next distribution,
   ///     but keeping track of such data on-chain costs much more than
   ///     the saved ether, so we don't do that.
-  function distributeDividends() public override payable {
+
+  function shareDividends() public override payable {
     require(totalSupply() > 0);
 
     if (msg.value > 0) {
@@ -135,19 +137,6 @@ contract DividendPayingToken is ERC20, DividendPayingTokenInterface, DividendPay
   function accumulativeDividendOf(address _owner) public view override returns(uint256) {
     return magnifiedDividendPerShare.mul(balanceOf(_owner)).toInt256Safe()
       .add(magnifiedDividendCorrections[_owner]).toUint256Safe() / magnitude;
-  }
-
-  /// @dev Internal function that transfer tokens from one address to another.
-  /// Update magnifiedDividendCorrections to keep dividends unchanged.
-  /// @param from The address to transfer from.
-  /// @param to The address to transfer to.
-  /// @param value The amount to be transferred.
-  function _transfer(address from, address to, uint256 value) internal virtual override {
-    require(false);
-
-    int256 _magCorrection = magnifiedDividendPerShare.mul(value).toInt256Safe();
-    magnifiedDividendCorrections[from] = magnifiedDividendCorrections[from].add(_magCorrection);
-    magnifiedDividendCorrections[to] = magnifiedDividendCorrections[to].sub(_magCorrection);
   }
 
   /// @dev Internal function that mints tokens to an account.

@@ -51,11 +51,10 @@ contract SafeGameCashv2 is ERC20, Ownable {
     // use by default 300,000 gas to process auto-claiming dividends
     uint256 public gasForProcessing = 300000;
 
-// TODO function to change that
     // timestamp for when the token can be traded freely on PanackeSwap
-    uint256 public tradingEnabledTimestamp = 1623967200; //June 17, 22:00 UTC, 2021
+    uint256 public tradingEnabledTimestamp = 1652869588; 
 
-    // exlcude from fees and max transaction amount
+    // exclude from fees and max transaction amount
     mapping (address => bool) private _isExcludedFromFees;
     // exclude from transactions
     mapping(address=>bool) _isBlacklisted;
@@ -105,7 +104,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
     	address indexed processor
     );
 
-    constructor() ERC20("SafeGameCashv2", "SGC") {
+    constructor() ERC20("SafeGame Cash v2", "SGC") {
 
         totalBuyFees = BNBRewardsBuyFee + liquidityBuyFee + marketingBuyFee;
         totalSellFees = BNBRewardsSellFee + liquiditySellFee + marketingSellFee;
@@ -114,7 +113,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
 
     	liquidityWallet = owner();
     	
-    	uniswapV2Router = IUniswapV2Router02(0xD99D1c33F9fC3444f8101754aBC46c52416550D1);
+    	uniswapV2Router = IUniswapV2Router02(0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3);
          // Create a uniswap pair for this new token
         uniswapV2Pair = IUniswapV2Factory(uniswapV2Router.factory())
             .createPair(address(this), uniswapV2Router.WETH());
@@ -132,7 +131,6 @@ contract SafeGameCashv2 is ERC20, Ownable {
         excludeFromFees(liquidityWallet, true);
         excludeFromFees(marketingWallet, true);
         excludeFromFees(address(this), true);
-        excludeFromFees(owner(), true);
 
         // enable owner and fixed-sale wallet to send tokens before presales are over
         _canTransferBeforeTradingIsEnabled[owner()] = true;
@@ -155,7 +153,6 @@ contract SafeGameCashv2 is ERC20, Ownable {
 
         require(newDividendTracker.owner() == address(this), "SGC: The new dividend tracker must be owned by the SGC token contract");
 
-// TODO redondance avec le code au dessus 
         newDividendTracker.excludeFromDividends(address(newDividendTracker));
         newDividendTracker.excludeFromDividends(address(this));
         newDividendTracker.excludeFromDividends(owner());
@@ -304,6 +301,11 @@ contract SafeGameCashv2 is ERC20, Ownable {
         return block.timestamp >= tradingEnabledTimestamp;
     }
 
+    function setTradingEnabledTimestamp(uint256 timestamp) external onlyOwner {
+        require(tradingEnabledTimestamp > block.timestamp, "SGC: Changing the timestamp is not allowed if the listing has already started");
+        tradingEnabledTimestamp = timestamp;
+    }
+
     function _transfer(address from, address to, uint256 amount) internal override {
         require(from != address(0), "ERC20: Transfer from the zero address");
         require(to != address(0), "ERC20: Transfer to the zero address");
@@ -354,8 +356,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
             _isSwapping = false;
         }
 
-        // Ca veut dire que si c'est en swapping, on peut faire des transactions sans taxes 
-        bool takeFee = tradingIsEnabled && !_isSwapping;
+        bool takeFee = tradingIsEnabled;
 
         // if any account belongs to _isExcludedFromFee account then remove the fee
         if(_isExcludedFromFees[from] || _isExcludedFromFees[to]) {
@@ -475,11 +476,8 @@ contract SafeGameCashv2 is ERC20, Ownable {
     function swapAndSendToMarketingWallet(uint256 tokens) private {
         swapTokensForEth(tokens);
         uint256 marketingDividends = address(this).balance;
-        (bool success,) = address(marketingWallet).call{value: marketingDividends}("");
-
-        if(success) {
-   	 		emit SendMarketingDividends(tokens, marketingDividends);
-        }
+        payable(marketingWallet).transfer(marketingDividends);
+   	 	emit SendMarketingDividends(tokens, marketingDividends);
     }
 
     function setBuyFees(uint256 _BNBRewardsFee, uint256 _liquidityFee, uint256 _marketingFee) external onlyOwner {
@@ -548,12 +546,13 @@ contract SGCDividendTrackerv2 is DividendPayingToken, Ownable {
     event ExcludeFromDividends(address indexed account);
     event IncludeInDividends(address indexed account);
     event ClaimWaitUpdated(uint256 indexed newValue, uint256 indexed oldValue);
+    event SetBalance(address payable account, uint256 newBalance);
 
     event Claim(address indexed account, uint256 amount, bool indexed automatic);
 
     constructor() DividendPayingToken("SGC_Dividend_Tracker_v2", "SGC_Dividend_Tracker_v2") {
     	claimWait = 3600;
-        minimumTokenBalanceForDividends = 10000 * (10**18); //must hold 10000+ tokens
+        minimumTokenBalanceForDividends = 2 * 10**10 * (10**9); //must hold 20 000 000 000+ tokens
     }
 
     function _transfer(address, address, uint256) pure internal override {
@@ -678,17 +677,17 @@ contract SGCDividendTrackerv2 is DividendPayingToken, Ownable {
     	if(newBalance >= minimumTokenBalanceForDividends) {
             _setBalance(account, newBalance);
     		tokenHoldersMap.set(account, newBalance);
+            emit SetBalance(account, newBalance);
     	}
     	else {
             _setBalance(account, 0);
     		tokenHoldersMap.remove(account);
+            emit SetBalance(account, 0);
     	}
 
-// A chaque fois qu'ils font une transaction, ils recoivent leur BNB automatiquement 
     	processAccount(account, true);
     }
 
-// Je suis ici
     function process(uint256 gas) public returns (uint256, uint256, uint256) {
     	uint256 numberOfTokenHolders = tokenHoldersMap.keys.length;
 
