@@ -29,10 +29,10 @@ contract SafeGameCashv2 is ERC20, Ownable {
     SGCDividendTrackerv2 public dividendTracker;
 
     address public liquidityWallet;
-    address public marketingWallet = 0x8171894d6316F73d2F69b3cA60b8633064962Ab4; // TODO change
+    address public marketingWallet = 0x8171894d6316F73d2F69b3cA60b8633064962Ab4; // Vrai 0xdE3D56dB69Ebf8A8F190f4Ff9e41E12589b77758
 
     uint256 public maxSellTransactionAmount = 2 * 10 ** 6 * (10**9); // 0.1% of supply TODO pouvoir changer
-    uint256 public swapTokensAtAmount = 2 * 10 ** 5 * (10**9); // 0.01% of supply TODO pouvoir hanger
+    uint256 public swapTokensAtAmount = 2 * 10 ** 5 * (10**9); // 0.01% of supply TODO pouvoir changer
 
     uint256 public BNBRewardsSellFee = 7;
     uint256 public liquiditySellFee = 4;
@@ -40,24 +40,24 @@ contract SafeGameCashv2 is ERC20, Ownable {
     uint256 public totalSellFees;
 
     uint256 public BNBRewardsBuyFee = 5;
-    uint256 public liquidityBuyFee = 3;
-    uint256 public marketingBuyFee = 6;
+    uint256 public liquidityBuyFee = 2;
+    uint256 public marketingBuyFee = 3;
     uint256 public totalBuyFees;
 
     uint256 public marketingTransferFee = 10;
-    uint256 public _marketingCurrentAccumulatedFee; // TODO change visibility
-    uint256 public _liquidityCurrentAccumulatedFee; // TODO change visibility
+    uint256 private _marketingCurrentAccumulatedFee;
+    uint256 private _liquidityCurrentAccumulatedFee;
 
     // use by default 300,000 gas to process auto-claiming dividends
     uint256 public gasForProcessing = 300000;
 
     // timestamp for when the token can be traded freely on PanackeSwap
-    uint256 public tradingEnabledTimestamp = 1612869588; 
+    uint256 public tradingEnabledTimestamp = 1612869588; // 1643670000 1er février à minuit
 
     // exclude from fees and max transaction amount
     mapping (address => bool) private _isExcludedFromFees;
     // exclude from transactions
-    mapping(address=>bool) _isBlacklisted;
+    mapping(address=>bool) private _isBlacklisted;
     // addresses that can make transfers before presale is over
     mapping (address => bool) private _canTransferBeforeTradingIsEnabled;
 
@@ -68,6 +68,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
     event UpdateDividendTracker(address indexed newAddress, address indexed oldAddress);
 
     event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
+
     event UpdateUniswapV2Pair(address indexed newAddress, address indexed oldAddress);
 
     event ExcludeFromFees(address indexed account, bool isExcluded);
@@ -132,7 +133,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
         excludeFromFees(marketingWallet, true);
         excludeFromFees(address(this), true);
 
-        // enable owner and fixed-sale wallet to send tokens before presales are over
+        // enable owner to send tokens before listing on PancakeSwap
         _canTransferBeforeTradingIsEnabled[owner()] = true;
 
         /*
@@ -245,6 +246,9 @@ contract SafeGameCashv2 is ERC20, Ownable {
     function isExcludedFromFees(address account) public view returns(bool) {
         return _isExcludedFromFees[account];
     }
+    function isBlacklisted(address account) public view returns(bool) {
+        return _isBlacklisted[account];
+    }
 
     function withdrawableDividendOf(address account) public view returns(uint256) {
     	return dividendTracker.withdrawableDividendOf(account);
@@ -308,12 +312,11 @@ contract SafeGameCashv2 is ERC20, Ownable {
     function _transfer(address from, address to, uint256 amount) internal override {
         require(from != address(0), "ERC20: Transfer from the zero address");
         require(to != address(0), "ERC20: Transfer to the zero address");
-        require(amount > 0, "ERC20: Transfer amount must be greater than zero");
+        // require(amount > 0, "ERC20: Transfer amount must be greater than zero");
         require(!_isBlacklisted[to], "SGC: Recipient is backlisted");
         require(!_isBlacklisted[from], "SGC: Sender is backlisted");
 
         bool tradingIsEnabled = getTradingIsEnabled();
-
         // only whitelisted addresses can make transfers before the official PancakeSwap listing
         if(!tradingIsEnabled) {
             require(_canTransferBeforeTradingIsEnabled[from], "SGC: This account cannot send tokens until trading is enabled");
@@ -346,7 +349,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
             swapAndLiquify(_liquidityCurrentAccumulatedFee);
             _liquidityCurrentAccumulatedFee = 0;
 
-            // swapAndSendToMarketingWallet(_marketingCurrentAccumulatedFee);
+            swapAndSendToMarketingWallet(_marketingCurrentAccumulatedFee);
             _marketingCurrentAccumulatedFee = 0;
 
             swapAndSendDividends(balanceOf(address(this)));
@@ -474,20 +477,26 @@ contract SafeGameCashv2 is ERC20, Ownable {
     function swapAndSendToMarketingWallet(uint256 tokens) private {
         swapTokensForEth(tokens);
         uint256 marketingDividends = address(this).balance;
-        payable(marketingWallet).transfer(marketingDividends);
-   	 	emit SendMarketingDividends(tokens, marketingDividends);
+        (bool success,) = payable(address(marketingWallet)).call{value: marketingDividends}("");
+
+        if(success) {
+   	 		emit SendMarketingDividends(tokens, marketingDividends);
+        }
     }
 
     function setBuyFees(uint256 _BNBRewardsFee, uint256 _liquidityFee, uint256 _marketingFee) external onlyOwner {
         BNBRewardsBuyFee = _BNBRewardsFee;
         liquidityBuyFee = _liquidityFee;
         marketingBuyFee = _marketingFee;
+        totalBuyFees = _BNBRewardsFee + _liquidityFee + _marketingFee;
+
     }
     
     function setSellFee(uint256 _BNBRewardsFee, uint256 _liquidityFee, uint256 _marketingFee) external onlyOwner {
         BNBRewardsSellFee = _BNBRewardsFee;
         liquiditySellFee = _liquidityFee;
         marketingSellFee= _marketingFee;
+        totalSellFees = _BNBRewardsFee + _liquidityFee + _marketingFee;
     }
 
     function addAccountToTheseThatcanTransferBeforeTradingIsEnabled(address account) external onlyOwner {
