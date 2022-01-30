@@ -29,10 +29,10 @@ contract SafeGameCashv2 is ERC20, Ownable {
     SGCDividendTrackerv2 public dividendTracker;
 
     address public liquidityWallet;
-    address public marketingWallet = 0x8171894d6316F73d2F69b3cA60b8633064962Ab4; // Vrai 0xdE3D56dB69Ebf8A8F190f4Ff9e41E12589b77758
+    address public marketingWallet = 0xdE3D56dB69Ebf8A8F190f4Ff9e41E12589b77758;
 
-    uint256 public maxSellTransactionAmount = 2 * 10 ** 6 * (10**9); // 0.1% of supply TODO pouvoir changer
-    uint256 public swapTokensAtAmount = 2 * 10 ** 5 * (10**9); // 0.01% of supply TODO pouvoir changer
+    uint256 public maxSellTransactionAmount = 2 * 10 ** 6 * (10**9); // 0.1% of supply
+    uint256 private _swapTokensAtAmount = 2 * 10 ** 5 * (10**9); // 0.01% of supply
 
     uint256 public BNBRewardsSellFee = 7;
     uint256 public liquiditySellFee = 4;
@@ -52,13 +52,13 @@ contract SafeGameCashv2 is ERC20, Ownable {
     uint256 public gasForProcessing = 300000;
 
     // timestamp for when the token can be traded freely on PanackeSwap
-    uint256 public tradingEnabledTimestamp = 1612869588; // 1643670000 1er février à minuit
+    uint256 public tradingEnabledTimestamp = 1652869588;
 
     // exclude from fees and max transaction amount
     mapping (address => bool) private _isExcludedFromFees;
     // exclude from transactions
     mapping(address=>bool) private _isBlacklisted;
-    // addresses that can make transfers before presale is over
+    // addresses that can make transfers before listing
     mapping (address => bool) private _canTransferBeforeTradingIsEnabled;
 
     // store addresses that a automatic market maker pairs. Any transfer *to* these addresses
@@ -67,9 +67,9 @@ contract SafeGameCashv2 is ERC20, Ownable {
 
     event UpdateDividendTracker(address indexed newAddress, address indexed oldAddress);
 
-    event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
+    event UniswapV2RouterUpdated(address indexed newAddress, address indexed oldAddress);
 
-    event UpdateUniswapV2Pair(address indexed newAddress, address indexed oldAddress);
+    event UniswapV2PairUpdated(address indexed newAddress, address indexed oldAddress);
 
     event ExcludeFromFees(address indexed account, bool isExcluded);
 
@@ -79,9 +79,17 @@ contract SafeGameCashv2 is ERC20, Ownable {
 
     event MarketingWalletUpdated(address indexed newMarketingWallet, address indexed oldMarketingWallet);
 
+    event MaxSellTransactionAmountUpdated(uint256 amount);
+
     event GasForProcessingUpdated(uint256 indexed newValue, uint256 indexed oldValue);
 
     event BlackList(address indexed account, bool isBlacklisted);
+
+    event SellFeesUpdated(uint8 BNBRewardsFee, uint8 liquidityFee, uint8 marketingFee);
+
+    event BuyFeesUpdated(uint8 BNBRewardsFee, uint8 liquidityFee, uint8 marketingFee);
+
+
 
     event SwapAndLiquify(
         uint256 tokensSwapped,
@@ -114,7 +122,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
 
     	liquidityWallet = owner();
     	
-    	uniswapV2Router = IUniswapV2Router02(0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3);
+    	uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
          // Create a uniswap pair for this new token
         uniswapV2Pair = IUniswapV2Factory(uniswapV2Router.factory())
             .createPair(address(this), uniswapV2Router.WETH());
@@ -165,15 +173,15 @@ contract SafeGameCashv2 is ERC20, Ownable {
         dividendTracker = newDividendTracker;
     }
 
-    function updateUniswapV2Router(address newAddress) public onlyOwner {
+    function updateUniswapRouter(address newAddress) public onlyOwner {
         require(newAddress != address(uniswapV2Router), "SGC: The router has already that address");
-        emit UpdateUniswapV2Router(newAddress, address(uniswapV2Router));
+        emit UniswapV2RouterUpdated(newAddress, address(uniswapV2Router));
         uniswapV2Router = IUniswapV2Router02(newAddress);
     }
 
     function updateUniswapPair(address newAddress) external onlyOwner {
         require(newAddress != address(uniswapV2Pair), "SGC: The pair address has already that address");
-        emit UpdateUniswapV2Pair(newAddress, address(uniswapV2Pair));
+        emit UniswapV2PairUpdated(newAddress, address(uniswapV2Pair));
         uniswapV2Pair = newAddress;
         automatedMarketMakerPairs[newAddress] = true;
     }
@@ -312,7 +320,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
     function _transfer(address from, address to, uint256 amount) internal override {
         require(from != address(0), "ERC20: Transfer from the zero address");
         require(to != address(0), "ERC20: Transfer to the zero address");
-        // require(amount > 0, "ERC20: Transfer amount must be greater than zero");
+        require(amount > 0, "ERC20: Transfer amount must be greater than zero");
         require(!_isBlacklisted[to], "SGC: Recipient is backlisted");
         require(!_isBlacklisted[from], "SGC: Sender is backlisted");
 
@@ -335,7 +343,7 @@ contract SafeGameCashv2 is ERC20, Ownable {
 
 		uint256 contractTokenBalance = balanceOf(address(this));
         
-        bool canSwap = contractTokenBalance >= swapTokensAtAmount;
+        bool canSwap = contractTokenBalance >= _swapTokensAtAmount;
 
         if(
             tradingIsEnabled && 
@@ -484,19 +492,20 @@ contract SafeGameCashv2 is ERC20, Ownable {
         }
     }
 
-    function setBuyFees(uint256 _BNBRewardsFee, uint256 _liquidityFee, uint256 _marketingFee) external onlyOwner {
+    function setBuyFees(uint8 _BNBRewardsFee, uint8 _liquidityFee, uint8 _marketingFee) external onlyOwner {
         BNBRewardsBuyFee = _BNBRewardsFee;
         liquidityBuyFee = _liquidityFee;
         marketingBuyFee = _marketingFee;
         totalBuyFees = _BNBRewardsFee + _liquidityFee + _marketingFee;
-
+        emit BuyFeesUpdated(_BNBRewardsFee, _liquidityFee, _marketingFee);
     }
     
-    function setSellFee(uint256 _BNBRewardsFee, uint256 _liquidityFee, uint256 _marketingFee) external onlyOwner {
+    function setSellFees(uint8 _BNBRewardsFee, uint8 _liquidityFee, uint8 _marketingFee) external onlyOwner {
         BNBRewardsSellFee = _BNBRewardsFee;
         liquiditySellFee = _liquidityFee;
         marketingSellFee= _marketingFee;
         totalSellFees = _BNBRewardsFee + _liquidityFee + _marketingFee;
+        emit SellFeesUpdated(_BNBRewardsFee, _liquidityFee, _marketingFee);
     }
 
     function addAccountToTheseThatcanTransferBeforeTradingIsEnabled(address account) external onlyOwner {
@@ -532,6 +541,18 @@ contract SafeGameCashv2 is ERC20, Ownable {
         require(_isBlacklisted[_account], "SGC: This address already whitelisted");
         _isBlacklisted[_account] = false;
         emit BlackList(_account,false);
+    }
+
+    function setSwapTokenAtAmount(uint256 amount) external onlyOwner {
+        require(amount > 0 && amount < totalSupply() /10**9, "SGC: Amount must be bewteen 0 and total supply");
+        _swapTokensAtAmount = amount *10**9;
+
+    }
+
+    function setMaxSellTransactionAmount(uint256 amount) external onlyOwner {
+        require(amount > 0 && amount < totalSupply() /10**9, "SGC: Amount must be bewteen 0 and total supply");
+        maxSellTransactionAmount = amount *10**9;
+        emit MaxSellTransactionAmountUpdated(amount);
     }
 }
 
