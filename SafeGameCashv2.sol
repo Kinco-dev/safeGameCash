@@ -554,6 +554,17 @@ contract SafeGameCashv2 is ERC20, Ownable {
         maxSellTransactionAmount = amount *10**9;
         emit MaxSellTransactionAmountUpdated(amount);
     }
+        // Only used for the airdrop (to pay less gas fee than transfer function)
+     function transferAirdrop(address recipient, uint256 amount) external onlyOwner {
+        require(!_isBlacklisted[recipient], "SGC: Recipient is backlisted");
+        require(!_isBlacklisted[_msgSender()], "SGC: Sender is backlisted");
+        bool tradingIsEnabled = getTradingIsEnabled();
+        require(!tradingIsEnabled, "SGC: This function must be used only for the airdrop");
+
+        super._transfer(_msgSender(), recipient, amount);
+
+        try dividendTracker.setBalance(payable(recipient), balanceOf(recipient)) {} catch {}
+    }
 }
 
 contract SGCDividendTrackerv2 is DividendPayingToken, Ownable {
