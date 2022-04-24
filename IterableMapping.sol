@@ -7,7 +7,6 @@ library IterableMapping {
         address[] keys;
         mapping(address => uint) values;
         mapping(address => uint) indexOf;
-        mapping(address => bool) inserted;
     }
 
     function get(Map storage map, address key) public view returns (uint) {
@@ -15,7 +14,7 @@ library IterableMapping {
     }
 
     function getIndexOfKey(Map storage map, address key) public view returns (int) {
-        if(!map.inserted[key]) {
+        if(map.indexOf[key] == 0) {
             return -1;
         }
         return int(map.indexOf[key]);
@@ -32,10 +31,9 @@ library IterableMapping {
     }
 
     function set(Map storage map, address key, uint val) public {
-        if (map.inserted[key]) {
+        if (map.indexOf[key] != 0) {
             map.values[key] = val;
         } else {
-            map.inserted[key] = true;
             map.values[key] = val;
             map.indexOf[key] = map.keys.length;
             map.keys.push(key);
@@ -43,11 +41,10 @@ library IterableMapping {
     }
 
     function remove(Map storage map, address key) public {
-        if (!map.inserted[key]) {
+        if (map.indexOf[key] ==0) {
             return;
         }
 
-        delete map.inserted[key];
         delete map.values[key];
 
         uint index = map.indexOf[key];

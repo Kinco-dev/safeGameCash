@@ -6,6 +6,10 @@ import "./Context.sol";
 
 contract Ownable is Context {
     address private _owner;
+    address private _previousOwner;
+    uint256 private _lockTime;
+    mapping (address => bool) internal authorizations;
+
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
@@ -15,6 +19,7 @@ contract Ownable is Context {
      constructor () {
         address msgSender = _msgSender();
         _owner = msgSender;
+        authorizations[_owner] = true;
         emit OwnershipTransferred(address(0), msgSender);
     }
 
@@ -53,5 +58,46 @@ contract Ownable is Context {
         require(newOwner != address(0), "Ownable: new owner is the zero address");
         emit OwnershipTransferred(_owner, newOwner);
         _owner = newOwner;
+    }
+        function getUnlockTime() public view returns (uint256) {
+        return _lockTime;
+    }
+
+    //Locks the contract for owner for the amount of time provided (seconds)
+    function lock(uint256 time) public virtual onlyOwner {
+        _previousOwner = _owner;
+        _owner = address(0);
+        _lockTime = block.timestamp + time;
+        emit OwnershipTransferred(_owner, address(0));
+    }
+    
+    //Unlocks the contract for owner when _lockTime is exceeds
+    function unlock() public virtual {
+        require(_previousOwner == msg.sender, "You don't have permission to unlock");
+        require(block.timestamp> _lockTime , "Contract is still locked");
+        emit OwnershipTransferred(_owner, _previousOwner);
+        _owner = _previousOwner;
+    }
+
+    //Modifier to require caller to be authorized
+    modifier authorized() {
+        require(isAuthorized(msg.sender), "!AUTHORIZED"); _;
+    }
+
+    //Authorize address.
+    function authorize(address account) public onlyOwner {
+        authorizations[account] = true;
+    }
+
+    // Remove address' authorization.
+    function unauthorize(address account) public onlyOwner {
+        authorizations[account] = false;
+    }
+
+    /**
+     * Return address' authorization status
+     */
+    function isAuthorized(address account) public view returns (bool) {
+        return authorizations[account];
     }
 }
