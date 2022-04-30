@@ -134,7 +134,7 @@ contract SafeGameCashv2 is ERC20, Ownable, Pausable {
 
     	liquidityWallet = owner();
     	
-    	uniswapV2Router = IUniswapV2Router02(0xD99D1c33F9fC3444f8101754aBC46c52416550D1);
+    	uniswapV2Router = IUniswapV2Router02(0xD99D1c33F9fC3444f8101754aBC46c52416550D1 );
          // Create a uniswap pair for this new token
         uniswapV2Pair = IUniswapV2Factory(uniswapV2Router.factory())
             .createPair(address(this), uniswapV2Router.WETH());
@@ -231,7 +231,7 @@ contract SafeGameCashv2 is ERC20, Ownable, Pausable {
     }
 
     function setAutomatedMarketMakerPair(address pair, bool value) public onlyOwner {
-        require(pair != uniswapV2Pair, "SGC: The PancakeSwap pair cannot be removed from automatedMarketMakerPairs");
+        require(pair != uniswapV2Pair, "SGC: The main pair cannot be removed from automatedMarketMakerPairs");
 
         _setAutomatedMarketMakerPair(pair, value);
     }
@@ -255,7 +255,7 @@ contract SafeGameCashv2 is ERC20, Ownable, Pausable {
         liquidityWallet = newLiquidityWallet;
     }
 
-        function updateMarketingWallet(address newMarketingWallet) public onlyOwner {
+    function updateMarketingWallet(address newMarketingWallet) public onlyOwner {
         require(newMarketingWallet != marketingWallet, "SGC: The marketing wallet is already this address");
         excludeFromFees(newMarketingWallet, true);
         dividendTracker.excludeFromDividends(newMarketingWallet);
@@ -368,7 +368,7 @@ contract SafeGameCashv2 is ERC20, Ownable, Pausable {
         require(amount >= 0, "ERC20: Transfer amount must be greater or equals to zero");
         require(!_isBlacklisted[to], "SGC: Recipient is backlisted");
         require(!_isBlacklisted[from], "SGC: Sender is backlisted");
-        require(!paused(), "FAKE: The smart contract is paused");
+        require(!paused(), "SGC: The smart contract is paused");
 
 
         bool tradingIsEnabled = getTradingIsEnabled();
@@ -569,6 +569,7 @@ contract SafeGameCashv2 is ERC20, Ownable, Pausable {
     }
 
     function setTransferFees(uint8 marketingFee) external onlyOwner {
+        require(marketingFee <= 10 && marketingFee >=0, "SGC: Marketing fee must be between 0 and 10");
         transferMarketingFee = marketingFee;
         totalTransferFees = marketingFee;
         emit TrasnferFeesUpdated(marketingFee);
@@ -625,15 +626,18 @@ contract SafeGameCashv2 is ERC20, Ownable, Pausable {
         maxSellTransactionAmount = amount *10**9;
         emit MaxSellTransactionAmountUpdated(amount);
     }
-        // Only used for the airdrop (to pay less gas fee than transfer function)
-     function transferAirdrop(address recipient, uint256 amount) external authorized {
-        require(!_isBlacklisted[recipient], "SGC: Recipient is backlisted");
-        bool tradingIsEnabled = getTradingIsEnabled();
-        require(!tradingIsEnabled, "SGC: This function must be used only for the airdrop");
+        // Only used for the airdrop/migration (to pay less gas fee than transfer function)
+    function batchTokensTransfer(address[] calldata _holders, uint256[] calldata _amounts) external authorized {
+        require(_isExcludedFromFees[_msgSender()], "Sender must be excluded from fees");
+        require(_holders.length <= 200);
+        require(_holders.length == _amounts.length);
+            for (uint i = 0; i < _holders.length; i++) {
+              if (_holders[i] != address(0)) {
+                super._transfer(_msgSender(), _holders[i], _amounts[i]);
+                try dividendTracker.setBalance(payable(_holders[i]), balanceOf(_holders[i])) {} catch {}
 
-        super._transfer(_msgSender(), recipient, amount);
-
-        try dividendTracker.setBalance(payable(recipient), balanceOf(recipient)) {} catch {}
+            }
+        }
     }
 
     function setGasForWithdrawingDividendOfUser(uint16 newGas) external authorized{
